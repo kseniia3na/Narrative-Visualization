@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Warming World: Global Temperature Anomalies</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-annotation/2.5.1/d3-annotation.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #app-container {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 0;
+            color: #222;
+        }
+
+        #scene-description {
+            text-align: center;
+            height: 40px;
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #0066cc;
+            color: white;
+            transition: opacity 0.2s;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            opacity: 0.8;
+        }
+
+        .center-ui {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #scene-indicator {
+            font-weight: bold;
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        select {
+            padding: 5px 10px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        #vis-container {
+            position: relative;
+            width: 100%;
+            height: 500px;
+        }
+
+        .line-path {
+            fill: none;
+            stroke-width: 3px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .axis-label {
+            font-size: 14px;
+            font-weight: bold;
+            fill: #555;
+        }
+
+        .tick text {
+            font-size: 12px;
+            fill: #666;
+        }
+
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            pointer-events: none;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            transition: opacity 0.2s;
+            transform: translate(-50%, -120%);
+        }
+
+        .annotation-note-title {
+            font-weight: bold;
+            fill: #222;
+        }
+        .annotation-note-label {
+            fill: #444;
+        }
+        .annotation-connector, .annotation-subject {
+            stroke: #333;
+            stroke-width: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <h1>The Warming World (NASA GISTEMP Data)</h1>
+        <p id="scene-description">Loading data from NASA...</p>
+
+        <div id="controls">
+            <button id="prev-btn" disabled>&#8592; Previous Scene</button>
+            
+            <div class="center-ui">
+                <div id="scene-indicator">Scene 1 of 3</div>
+                <div id="explore-controls" style="display: none;">
+                    <label for="decade-select"><strong>Explore Decade:</strong></label>
+                    <select id="decade-select">
+                        <option value="ALL">All Years</option>
+                        <option value="1980">1980s</option>
+                        <option value="1990">1990s</option>
+                        <option value="2000">2000s</option>
+                        <option value="2010">2010s</option>
+                        <option value="2020">2020s</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="next-btn" disabled>Next Scene &#8594;</button>
+        </div>
+        <div id="vis-container">
+        </div>
+
+        <div id="tooltip"></div>
+    </div>
+
+    <script>
+        let currentScene = 1;
+        let selectedDecade = "ALL";
+        let climateData = [];
+        let maxYear = 2023;
+
+        const container = d3.select("#vis-container");
+        const width = container.node().getBoundingClientRect().width;
+        const height = 500;
+        const margin = { top: 40, right: 40, bottom: 50, left: 60 };
+        const innerWidth = width - margin.left - margin.right;
+        const innerHeight = height - margin.top - margin.bottom;
+
+        const svg = container.append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const chart = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const xScale = d3.scaleLinear().range([0, innerWidth]);
+        const yScale = d3.scaleLinear().range([innerHeight, 0]);
+
+        const lineGenerator = d3.line()
+            .x(d => xScale(d.Year))
+            .y(d => yScale(d.Anomaly))
+            .curve(d3.curveMonotoneX);
+
+        const lineGroup = chart.append("g").attr("class", "line-group");
+        const interactionGroup = chart.append("g").attr("class", "interaction-group");
+        const annotationGroup = svg.append("g").attr("class", "annotation-group");
+        const linePath = lineGroup.append("path").attr("class", "line-path");
+
+        d3.text("data.csv").then(rawText => {.
+            let lines = rawText.split("\n");
+            if (!lines[0].startsWith("Year")) {
+                lines.shift();
+            }
+            let cleanCSV = lines.join("\n");
+            let parsedData = d3.csvParse(cleanCSV);
+            climateData = parsedData.map(d => ({
+                Year: +d.Year,
+                Anomaly: +d.No_Smoothing 
+            })).filter(d => !isNaN(d.Anomaly)); 
+
+            maxYear = d3.max(climateData, d => d.Year);
+            xScale.domain([1880, maxYear]);
+            
+            const maxAnomaly = d3.max(climateData, d => d.Anomaly);
+            const minAnomaly = d3.min(climateData, d => d.Anomaly);
+            yScale.domain([minAnomaly - 0.1, maxAnomaly + 0.2]); 
+
+            const xAxis = d3.axisBottom(xScale).tickFormat(d3.format("d")).ticks(10);
+            const yAxis = d3.axisLeft(yScale).ticks(8).tickFormat(d => d > 0 ? `+${d}°C` : `${d}°C`);
+
+            chart.append("g")
+                .attr("transform", `translate(0,${innerHeight})`)
+                .call(xAxis);
+
+            chart.append("g")
+                .call(yAxis);
+
+            chart.append("text")
+                .attr("class", "axis-label")
+                .attr("x", innerWidth / 2)
+                .attr("y", innerHeight + 40)
+                .attr("text-anchor", "middle")
+                .text("Year");
+
+            chart.append("text")
+                .attr("class", "axis-label")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -innerHeight / 2)
+                .attr("y", -45)
+                .attr("text-anchor", "middle")
+                .text("Temperature Anomaly (°C)");
+
+            chart.append("line")
+                .attr("x1", 0)
+                .attr("x2", innerWidth)
+                .attr("y1", yScale(0))
+                .attr("y2", yScale(0))
+                .attr("stroke", "#999")
+                .attr("stroke-dasharray", "5,5")
+                .attr("stroke-width", 1.5);
+
+            d3.select("#next-btn").property("disabled", false);
+            
+            updateScene();
+        }).catch(error => {
+            console.error("Error loading data.csv:", error);
+            d3.select("#scene-description").style("color", "red").text("Error loading data.csv. Please ensure you downloaded the NASA file, named it data.csv, and placed it in the same folder.");
+        });
+
+        function updateScene() {
+            d3.select("#scene-indicator").text(`Scene ${currentScene} of 3`);
+            d3.select("#prev-btn").property("disabled", currentScene === 1);
+            d3.select("#next-btn").property("disabled", currentScene === 3 || climateData.length === 0);
+            
+            const exploreControls = d3.select("#explore-controls");
+            if (currentScene === 3) {
+                exploreControls.style("display", "block");
+            } else {
+                exploreControls.style("display", "none");
+                selectedDecade = "ALL"; 
+                d3.select("#decade-select").property("value", "ALL");
+            }
+
+            annotationGroup.selectAll("*").remove();
+            interactionGroup.selectAll("*").remove();
+
+            let displayData = [];
+            let lineColor = "";
+            let description = "";
+            let annotations = [];
+            if (currentScene === 1) {
+                displayData = climateData.filter(d => d.Year <= 1950);
+                lineColor = "#0066cc";
+                description = "For decades, global temperatures fluctuated naturally, mostly staying below the modern 0°C baseline. This period represents the pre/early-industrial norm.";
+                
+                annotations = [{
+                    note: {
+                        title: "Natural Fluctuations",
+                        label: "Temperatures dip and rise but stay relatively stable.",
+                        wrap: 250
+                    },
+                    x: xScale(1910),
+                    y: yScale(-0.43),
+                    dy: -50,
+                    dx: 30,
+                    type: d3.annotationCalloutCircle,
+                    subject: { radius: 25, radiusPadding: 5 }
+                }];
+            } 
+            else if (currentScene === 2) {
+                displayData = climateData;
+                lineColor = "#cc0000";
+                description = "Starting in the late 20th century, the trend changes drastically. The data shoots sharply upward, breaking all historical norms as greenhouse gas emissions rise.";
+                
+                const latestData = climateData[climateData.length - 1];
+                annotations = [{
+                    note: {
+                        title: "The Modern Spike",
+                        label: "The trend shoots aggressively upward past 1980.",
+                        wrap: 200
+                    },
+                    x: xScale(latestData.Year),
+                    y: yScale(latestData.Anomaly),
+                    dy: 20,
+                    dx: -100,
+                    type: d3.annotationCalloutElbow,
+                    connector: { end: "arrow" }
+                }];
+            } 
+            else if (currentScene === 3) {
+                displayData = climateData;
+                lineColor = "#ff9900";
+                description = "Explore the data yourself. Use the dropdown to highlight specific decades, and hover your mouse over the points to view exact temperatures.";
+                
+                setupInteractiveExploration();
+            }
+
+            d3.select("#scene-description").text(description);
+
+            linePath
+                .datum(displayData)
+                .transition()
+                .duration(1000)
+                .attr("d", lineGenerator)
+                .attr("stroke", lineColor);
+
+            if (annotations.length > 0) {
+                const makeAnnotations = d3.annotation()
+                    .type(d3.annotationLabel)
+                    .annotations(annotations);
+
+                annotationGroup
+                    .style("opacity", 0)
+                    .call(makeAnnotations)
+                    .transition().duration(500).delay(800)
+                    .style("opacity", 1);
+            }
+        }
+
+        function setupInteractiveExploration() {
+            interactionGroup.selectAll(".data-point")
+                .data(climateData)
+                .enter()
+                .append("circle")
+                .attr("class", "data-point")
+                .attr("cx", d => xScale(d.Year))
+                .attr("cy", d => yScale(d.Anomaly))
+                .attr("r", 6)
+                .attr("fill", d => getPointColor(d.Year))
+                .attr("stroke", "#ffffff")
+                .attr("stroke-width", 1.5)
+                .style("opacity", d => getPointOpacity(d.Year))
+                .style("cursor", "pointer")
+                .on("mouseover", function(event, d) {
+                    d3.select(this)
+                        .transition().duration(100)
+                        .attr("r", 10)
+                        .attr("fill", "#cc0000");
+
+                    const tooltip = d3.select("#tooltip");
+                    tooltip.transition().duration(200).style("opacity", 1);
+                    tooltip.html(`
+                        <div style="font-weight:bold; border-bottom:1px solid #666; margin-bottom:5px; padding-bottom:2px;">Year: ${d.Year}</div>
+                        <div>Anomaly: <span style="color:${d.Anomaly > 0 ? '#ff6666' : '#66ccff'}; font-weight:bold;">${d.Anomaly > 0 ? '+' : ''}${d.Anomaly}°C</span></div>
+                    `)
+                    .style("left", (event.pageX) + "px")
+                    .style("top", (event.pageY) + "px");
+                })
+                .on("mouseout", function(event, d) {
+                    d3.select(this)
+                        .transition().duration(200)
+                        .attr("r", 6)
+                        .attr("fill", getPointColor(d.Year));
+                    
+                    d3.select("#tooltip").transition().duration(500).style("opacity", 0);
+                });
+        }
+
+        function getPointColor(year) {
+            if (selectedDecade === "ALL") return "#ff9900";
+            const decadeStart = parseInt(selectedDecade);
+            return (year >= decadeStart && year < decadeStart + 10) ? "#cc0000" : "#cccccc";
+        }
+
+        function getPointOpacity(year) {
+            if (selectedDecade === "ALL") return 1;
+            const decadeStart = parseInt(selectedDecade);
+            return (year >= decadeStart && year < decadeStart + 10) ? 1 : 0.3;
+        }
+        d3.select("#next-btn").on("click", () => {
+            if (currentScene < 3) {
+                currentScene++;
+                updateScene();
+            }
+        });
+
+        d3.select("#prev-btn").on("click", () => {
+            if (currentScene > 1) {
+                currentScene--;
+                updateScene();
+            }
+        });
+
+        d3.select("#decade-select").on("change", function() {
+            selectedDecade = this.value;
+            interactionGroup.selectAll(".data-point")
+                .transition().duration(300)
+                .attr("fill", d => getPointColor(d.Year))
+                .style("opacity", d => getPointOpacity(d.Year));
+        });
+
+    </script>
+</body>
+</html>
