@@ -6,6 +6,7 @@
     <title>The Warming World: Global Temperature Anomalies</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-annotation/2.5.1/d3-annotation.min.js"></script>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -30,17 +31,28 @@
         h1 {
             text-align: center;
             margin-top: 0;
+            margin-bottom: 20px;
             color: #222;
+        }
+
+        .metric-definition {
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+            margin-top: -15px;
+            margin-bottom: 25px;
+            padding: 0 20px;
+            line-height: 1.5;
         }
 
         #scene-description {
             text-align: center;
-            height: 40px;
-            color: #555;
+            height: 60px;
+            color: #444;
             margin-bottom: 20px;
-            line-height: 1.4;
+            line-height: 1.5;
+            font-size: 16px;
         }
-
         #controls {
             display: flex;
             justify-content: space-between;
@@ -92,7 +104,6 @@
             border-radius: 4px;
             border: 1px solid #ccc;
         }
-
         #vis-container {
             position: relative;
             width: 100%;
@@ -116,7 +127,6 @@
             font-size: 12px;
             fill: #666;
         }
-
         #tooltip {
             position: absolute;
             opacity: 0;
@@ -129,8 +139,8 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             transition: opacity 0.2s;
             transform: translate(-50%, -120%);
+            z-index: 10;
         }
-
         .annotation-note-title {
             font-weight: bold;
             fill: #222;
@@ -148,8 +158,11 @@
 
     <div id="app-container">
         <h1>The Warming World (NASA GISTEMP Data)</h1>
-        <p id="scene-description">Loading data from NASA...</p>
+        <p class="metric-definition">
+            This chart tracks the <strong>Global Land-Ocean Temperature Anomaly</strong>: how much warmer or cooler the combined surface of the Earth's land and oceans is compared to the mid-20th-century historical average.
+        </p>
 
+        <p id="scene-description">Loading data from NASA...</p>
         <div id="controls">
             <button id="prev-btn" disabled>&#8592; Previous Scene</button>
             
@@ -167,7 +180,6 @@
                     </select>
                 </div>
             </div>
-
             <button id="next-btn" disabled>Next Scene &#8594;</button>
         </div>
         <div id="vis-container">
@@ -181,21 +193,17 @@
         let selectedDecade = "ALL";
         let climateData = [];
         let maxYear = 2023;
-
         const container = d3.select("#vis-container");
         const width = container.node().getBoundingClientRect().width;
         const height = 500;
-        const margin = { top: 40, right: 40, bottom: 50, left: 60 };
+        const margin = { top: 80, right: 40, bottom: 50, left: 80 };
         const innerWidth = width - margin.left - margin.right;
         const innerHeight = height - margin.top - margin.bottom;
-
         const svg = container.append("svg")
             .attr("width", width)
             .attr("height", height);
-
         const chart = svg.append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
-
         const xScale = d3.scaleLinear().range([0, innerWidth]);
         const yScale = d3.scaleLinear().range([innerHeight, 0]);
 
@@ -209,24 +217,30 @@
         const annotationGroup = svg.append("g").attr("class", "annotation-group");
         const linePath = lineGroup.append("path").attr("class", "line-path");
 
-        d3.text("data.csv").then(rawText => {.
-            let lines = rawText.split("\n");
-            if (!lines[0].startsWith("Year")) {
-                lines.shift();
+        d3.text("data.csv").then(rawText => {
+            let lines = rawText.split(/\r?\n/);
+            let headerIndex = lines.findIndex(line => line.trim().startsWith("Year"));
+            if (headerIndex !== -1) {
+                lines = lines.slice(headerIndex);
             }
+            
             let cleanCSV = lines.join("\n");
             let parsedData = d3.csvParse(cleanCSV);
-            climateData = parsedData.map(d => ({
-                Year: +d.Year,
-                Anomaly: +d.No_Smoothing 
-            })).filter(d => !isNaN(d.Anomaly)); 
+
+            climateData = parsedData.map(d => {
+                let tempVal = d.No_Smoothing !== undefined ? d.No_Smoothing : d.Anomaly;
+                return {
+                    Year: +d.Year,
+                    Anomaly: +tempVal
+                };
+            }).filter(d => !isNaN(d.Anomaly) && !isNaN(d.Year));
 
             maxYear = d3.max(climateData, d => d.Year);
             xScale.domain([1880, maxYear]);
             
             const maxAnomaly = d3.max(climateData, d => d.Anomaly);
             const minAnomaly = d3.min(climateData, d => d.Anomaly);
-            yScale.domain([minAnomaly - 0.1, maxAnomaly + 0.2]); 
+            yScale.domain([minAnomaly - 0.1, maxAnomaly + 0.4]); 
 
             const xAxis = d3.axisBottom(xScale).tickFormat(d3.format("d")).ticks(10);
             const yAxis = d3.axisLeft(yScale).ticks(8).tickFormat(d => d > 0 ? `+${d}°C` : `${d}°C`);
@@ -249,7 +263,7 @@
                 .attr("class", "axis-label")
                 .attr("transform", "rotate(-90)")
                 .attr("x", -innerHeight / 2)
-                .attr("y", -45)
+                .attr("y", -60) 
                 .attr("text-anchor", "middle")
                 .text("Temperature Anomaly (°C)");
 
@@ -261,29 +275,26 @@
                 .attr("stroke", "#999")
                 .attr("stroke-dasharray", "5,5")
                 .attr("stroke-width", 1.5);
-
             d3.select("#next-btn").property("disabled", false);
-            
             updateScene();
         }).catch(error => {
             console.error("Error loading data.csv:", error);
-            d3.select("#scene-description").style("color", "red").text("Error loading data.csv. Please ensure you downloaded the NASA file, named it data.csv, and placed it in the same folder.");
+            d3.select("#scene-description")
+              .style("color", "red")
+              .text("Error loading data.csv. Please ensure the file is in the same folder.");
         });
-
         function updateScene() {
             d3.select("#scene-indicator").text(`Scene ${currentScene} of 3`);
             d3.select("#prev-btn").property("disabled", currentScene === 1);
             d3.select("#next-btn").property("disabled", currentScene === 3 || climateData.length === 0);
-            
             const exploreControls = d3.select("#explore-controls");
             if (currentScene === 3) {
                 exploreControls.style("display", "block");
             } else {
                 exploreControls.style("display", "none");
-                selectedDecade = "ALL"; 
+                selectedDecade = "ALL";
                 d3.select("#decade-select").property("value", "ALL");
             }
-
             annotationGroup.selectAll("*").remove();
             interactionGroup.selectAll("*").remove();
 
@@ -294,7 +305,7 @@
             if (currentScene === 1) {
                 displayData = climateData.filter(d => d.Year <= 1950);
                 lineColor = "#0066cc";
-                description = "For decades, global temperatures fluctuated naturally, mostly staying below the modern 0°C baseline. This period represents the pre/early-industrial norm.";
+                description = "For decades, the combined average temperature of the Earth's land and oceans fluctuated naturally. Staying near the 0°C baseline means the global climate was historically stable.";
                 
                 annotations = [{
                     note: {
@@ -302,10 +313,10 @@
                         label: "Temperatures dip and rise but stay relatively stable.",
                         wrap: 250
                     },
-                    x: xScale(1910),
-                    y: yScale(-0.43),
-                    dy: -50,
-                    dx: 30,
+                    x: margin.left + xScale(1910),
+                    y: margin.top + yScale(-0.43), 
+                    dy: -180,
+                    dx: 10,
                     type: d3.annotationCalloutCircle,
                     subject: { radius: 25, radiusPadding: 5 }
                 }];
@@ -313,8 +324,7 @@
             else if (currentScene === 2) {
                 displayData = climateData;
                 lineColor = "#cc0000";
-                description = "Starting in the late 20th century, the trend changes drastically. The data shoots sharply upward, breaking all historical norms as greenhouse gas emissions rise.";
-                
+                description = "Since the 1980s, the data shoots drastically upward. This +1°C global warming directly fuels the extreme heatwaves, intense wildfires, and disrupted weather patterns affecting our daily lives today.";
                 const latestData = climateData[climateData.length - 1];
                 annotations = [{
                     note: {
@@ -322,18 +332,19 @@
                         label: "The trend shoots aggressively upward past 1980.",
                         wrap: 200
                     },
-                    x: xScale(latestData.Year),
-                    y: yScale(latestData.Anomaly),
-                    dy: 20,
-                    dx: -100,
+                    x: margin.left + xScale(latestData.Year),
+                    y: margin.top + yScale(latestData.Anomaly),
+                    dy: 0,
+                    dx: -180,
                     type: d3.annotationCalloutElbow,
                     connector: { end: "arrow" }
                 }];
             } 
             else if (currentScene === 3) {
                 displayData = climateData;
-                lineColor = "#ff9900";
-                description = "Explore the data yourself. Use the dropdown to highlight specific decades, and hover your mouse over the points to view exact temperatures.";
+                lineColor = "#ff9900"; 
+                
+                description = "Explore the data yourself. While a 1°C anomaly sounds small, on a planetary scale it represents a massive amount of trapped heat fundamentally changing our world.";
                 
                 setupInteractiveExploration();
             }
@@ -355,7 +366,7 @@
                 annotationGroup
                     .style("opacity", 0)
                     .call(makeAnnotations)
-                    .transition().duration(500).delay(800)
+                    .transition().duration(500).delay(800) 
                     .style("opacity", 1);
             }
         }
@@ -384,7 +395,7 @@
                     tooltip.transition().duration(200).style("opacity", 1);
                     tooltip.html(`
                         <div style="font-weight:bold; border-bottom:1px solid #666; margin-bottom:5px; padding-bottom:2px;">Year: ${d.Year}</div>
-                        <div>Anomaly: <span style="color:${d.Anomaly > 0 ? '#ff6666' : '#66ccff'}; font-weight:bold;">${d.Anomaly > 0 ? '+' : ''}${d.Anomaly}°C</span></div>
+                        <div>Anomaly: <span style="color:${d.Anomaly > 0 ? '#ff6666' : '#66ccff'}; font-weight:bold;">${d.Anomaly > 0 ? '+' : ''}${d.Anomaly.toFixed(2)}°C</span></div>
                     `)
                     .style("left", (event.pageX) + "px")
                     .style("top", (event.pageY) + "px");
@@ -410,6 +421,7 @@
             const decadeStart = parseInt(selectedDecade);
             return (year >= decadeStart && year < decadeStart + 10) ? 1 : 0.3;
         }
+
         d3.select("#next-btn").on("click", () => {
             if (currentScene < 3) {
                 currentScene++;
