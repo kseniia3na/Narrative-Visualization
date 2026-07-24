@@ -192,7 +192,8 @@
         let currentScene = 1;
         let selectedDecade = "ALL";
         let climateData = [];
-        let maxYear = 2023;
+        let maxYear = 2024; 
+
         const container = d3.select("#vis-container");
         const width = container.node().getBoundingClientRect().width;
         const height = 500;
@@ -278,10 +279,10 @@
             d3.select("#next-btn").property("disabled", false);
             updateScene();
         }).catch(error => {
-            console.error("Error loading data.csv:", error);
+            console.error("Error loading data:", error);
             d3.select("#scene-description")
               .style("color", "red")
-              .text("Error loading data.csv. Please ensure the file is in the same folder.");
+              .text("Error loading data.csv. Please ensure the file is in the same folder on GitHub.");
         });
         function updateScene() {
             d3.select("#scene-indicator").text(`Scene ${currentScene} of 3`);
@@ -292,7 +293,7 @@
                 exploreControls.style("display", "block");
             } else {
                 exploreControls.style("display", "none");
-                selectedDecade = "ALL";
+                selectedDecade = "ALL"; 
                 d3.select("#decade-select").property("value", "ALL");
             }
             annotationGroup.selectAll("*").remove();
@@ -334,8 +335,8 @@
                     },
                     x: margin.left + xScale(latestData.Year),
                     y: margin.top + yScale(latestData.Anomaly),
-                    dy: 0,
-                    dx: -180,
+                    dy: 30,
+                    dx: -150,
                     type: d3.annotationCalloutElbow,
                     connector: { end: "arrow" }
                 }];
